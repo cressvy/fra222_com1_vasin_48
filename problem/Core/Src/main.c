@@ -39,6 +39,9 @@
 /* USER CODE END PM */
 
 /* Private variables ---------------------------------------------------------*/
+ADC_HandleTypeDef hadc1;
+DMA_HandleTypeDef hdma_adc1;
+
 UART_HandleTypeDef huart2;
 
 /* USER CODE BEGIN PV */
@@ -47,7 +50,14 @@ typedef struct _PortPin
 	GPIO_TypeDef* PORT;
 	uint16_t PIN;
 } PortPin;
+typedef struct {
+	uint16_t IN0; // Rank 1
+	uint16_t IN1; // rank 2
+	uint16_t Temp;// rank3
 
+}ADCDMABuffer;
+
+ADCDMABuffer adcdmabuffer[10];
 //declare PortPin R,L
 PortPin R[4] =
 {
@@ -64,20 +74,24 @@ PortPin L[4] =
 		{GPIOB,GPIO_PIN_6},
 		{GPIOA,GPIO_PIN_7}
 };
-
-//For Button Contenter
-uint16_t ButtonMatrix=0;
-uint32_t Sum = 0;
-uint32_t LastButton = 0;
-uint32_t cs = 0;//check sequent
-uint32_t count = 0 ;//count digit
+uint16_t ButtonMatrix = 0;
+uint16_t LastButton = 0;
+uint16_t num = 0;
+uint16_t avoltb = 0; // 1bit
+uint16_t avolt = 0; // mV
+uint16_t bvoltb = 0; // 1bit
+uint16_t bvolt = 0; // mV
+uint16_t tempb = 0 ; // bit
+uint16_t temp = 0 ;  // c
 
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
 void SystemClock_Config(void);
 static void MX_GPIO_Init(void);
+static void MX_DMA_Init(void);
 static void MX_USART2_UART_Init(void);
+static void MX_ADC1_Init(void);
 /* USER CODE BEGIN PFP */
 
 /* USER CODE END PFP */
@@ -115,7 +129,9 @@ int main(void)
 
   /* Initialize all configured peripherals */
   MX_GPIO_Init();
+  MX_DMA_Init();
   MX_USART2_UART_Init();
+  MX_ADC1_Init();
   /* USER CODE BEGIN 2 */
 
   /* USER CODE END 2 */
@@ -126,17 +142,14 @@ int main(void)
   {
     /* USER CODE END WHILE */
 
-
     /* USER CODE BEGIN 3 */
-	  //Call function every 10 ms = 100Hz
-	  	  	  static uint32_t timestamp=0;
-	  	  	  if(HAL_GetTick()>=timestamp)
-	  	  	  {
-	  	  		  timestamp =HAL_GetTick() + 10;
-	  	  		  ReadMatrixButton_1Row();
-	  	  		  myfnc();
-
-	  	 }
+	  static uint32_t timestamp = 0;
+	  		if (HAL_GetTick() >= timestamp) {
+	  			timestamp = HAL_GetTick() + 10;
+	  			callin_fnc();
+	  			myfnc_mb();
+	  		}
+  }
   /* USER CODE END 3 */
 }
 
@@ -187,6 +200,76 @@ void SystemClock_Config(void)
 }
 
 /**
+  * @brief ADC1 Initialization Function
+  * @param None
+  * @retval None
+  */
+static void MX_ADC1_Init(void)
+{
+
+  /* USER CODE BEGIN ADC1_Init 0 */
+
+  /* USER CODE END ADC1_Init 0 */
+
+  ADC_ChannelConfTypeDef sConfig = {0};
+
+  /* USER CODE BEGIN ADC1_Init 1 */
+
+  /* USER CODE END ADC1_Init 1 */
+
+  /** Configure the global features of the ADC (Clock, Resolution, Data Alignment and number of conversion)
+  */
+  hadc1.Instance = ADC1;
+  hadc1.Init.ClockPrescaler = ADC_CLOCK_SYNC_PCLK_DIV4;
+  hadc1.Init.Resolution = ADC_RESOLUTION_8B;
+  hadc1.Init.ScanConvMode = ENABLE;
+  hadc1.Init.ContinuousConvMode = ENABLE;
+  hadc1.Init.DiscontinuousConvMode = DISABLE;
+  hadc1.Init.ExternalTrigConvEdge = ADC_EXTERNALTRIGCONVEDGE_NONE;
+  hadc1.Init.ExternalTrigConv = ADC_SOFTWARE_START;
+  hadc1.Init.DataAlign = ADC_DATAALIGN_RIGHT;
+  hadc1.Init.NbrOfConversion = 3;
+  hadc1.Init.DMAContinuousRequests = ENABLE;
+  hadc1.Init.EOCSelection = ADC_EOC_SEQ_CONV;
+  if (HAL_ADC_Init(&hadc1) != HAL_OK)
+  {
+    Error_Handler();
+  }
+
+  /** Configure for the selected ADC regular channel its corresponding rank in the sequencer and its sample time.
+  */
+  sConfig.Channel = ADC_CHANNEL_0;
+  sConfig.Rank = 1;
+  sConfig.SamplingTime = ADC_SAMPLETIME_84CYCLES;
+  if (HAL_ADC_ConfigChannel(&hadc1, &sConfig) != HAL_OK)
+  {
+    Error_Handler();
+  }
+
+  /** Configure for the selected ADC regular channel its corresponding rank in the sequencer and its sample time.
+  */
+  sConfig.Channel = ADC_CHANNEL_1;
+  sConfig.Rank = 2;
+  if (HAL_ADC_ConfigChannel(&hadc1, &sConfig) != HAL_OK)
+  {
+    Error_Handler();
+  }
+
+  /** Configure for the selected ADC regular channel its corresponding rank in the sequencer and its sample time.
+  */
+  sConfig.Channel = ADC_CHANNEL_TEMPSENSOR;
+  sConfig.Rank = 3;
+  if (HAL_ADC_ConfigChannel(&hadc1, &sConfig) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  /* USER CODE BEGIN ADC1_Init 2 */
+
+  /* USER CODE END ADC1_Init 2 */
+
+}
+
+/**
   * @brief USART2 Initialization Function
   * @param None
   * @retval None
@@ -216,6 +299,22 @@ static void MX_USART2_UART_Init(void)
   /* USER CODE BEGIN USART2_Init 2 */
 
   /* USER CODE END USART2_Init 2 */
+
+}
+
+/**
+  * Enable DMA controller clock
+  */
+static void MX_DMA_Init(void)
+{
+
+  /* DMA controller clock enable */
+  __HAL_RCC_DMA2_CLK_ENABLE();
+
+  /* DMA interrupt init */
+  /* DMA2_Stream0_IRQn interrupt configuration */
+  HAL_NVIC_SetPriority(DMA2_Stream0_IRQn, 0, 0);
+  HAL_NVIC_EnableIRQ(DMA2_Stream0_IRQn);
 
 }
 
@@ -291,128 +390,116 @@ static void MX_GPIO_Init(void)
 }
 
 /* USER CODE BEGIN 4 */
-void myfnc(){
-	if (LastButton == 0 && ButtonMatrix > 0)
-		  	  					{
-		  	  						if (ButtonMatrix == 8) // 0
-		  	  						{
-		  	  							Sum += 8;
-		  	  							count += 1;
-		  	  						}
 
-		  	  						else if (ButtonMatrix == 4) // 1
-		  	  						{
-		  	  							Sum += 4;
-		  	  							count += 1;
-		  	  						}
-
-		  	  						else if (ButtonMatrix == 64) // 2
-		  	  						{
-		  	  							Sum += 64;
-		  	  							count += 1;
-		  	  						}
-
-		  	  						else if (ButtonMatrix == 1024) // 3
-		  	  						{
-		  	  							Sum += 1024;
-		  	  							count += 1;
-		  	  						}
-
-		  	  						else if (ButtonMatrix == 2) // 4
-		  	  						{
-		  	  							Sum += 2;
-		  	  							count += 1;
-		  	  							if(Sum == 514){
-		  	  								cs += 1;
-		  	  							}
-		  	  							if(Sum == 1540){
-		  	  								cs += 1;
-		  	  							}
-		  	  						}
-
-		  	  						else if (ButtonMatrix == 32) // 5
-		  	  						{
-		  	  							Sum += 32;
-		  	  							count += 1;
-		  	  							if(Sum == 1580){
-		  	  								cs += 1;
-		  	  							}
-		  	  						}
-
-		  	  						else if (ButtonMatrix == 512) // 6
-		  	  						{
-
-		  	  							Sum += 512;
-		  	  							count += 1;
-		  	  							if (Sum == 512){
-		  	  								cs += 1;
-		  	  							}
-
-		  	  						}
-
-		  	  						else if (ButtonMatrix == 1) // 7
-		  	  						{
-		  	  							Sum += 1;
-		  	  							count += 1;
-		  	  						}
-
-		  	  						else if (ButtonMatrix == 16 ) // 8
-		  	  						{
-		  	  							Sum += 16;
-		  	  							count += 1;
-		  	  						}
-
-
-		  	  						else if (ButtonMatrix == 256) // 9
-		  	  						{
-		  	  							Sum += 256;
-		  	  							count += 1;
-		  	  						}
-
-		  	  						//LastButton = Button ;
-
-		  	  						if (ButtonMatrix == 4096) // clear
-		  	  							{
-		  	  							Sum = 0;
-		  	  							cs = 0;
-		  	  							count =0;
-		  	  							}
-
-		  	  						if ((ButtonMatrix == 32768) && (Sum == 1622)&&(cs == 4)&&(count == 11))
-		  	  							{
-		  	  							}
-		  	  					}
-
-		  	  					LastButton = ButtonMatrix;
-
-		  	  	  }
-void ReadMatrixButton_1Row()
-{
-	//
+void myfnc_mb(){
 	static uint8_t X = 0;
+		//READ L1-L4
+		register int i;
+		for (i = 0; i < 4; i++) {
+			if (HAL_GPIO_ReadPin(L[i].PORT, L[i].PIN))
+			{
+				ButtonMatrix &= ~(1 << (X * 4 + i));
 
-	//READ L1-L4
-	register int i;
-	for(i=0;i<4;i++)
-	{
-		if(HAL_GPIO_ReadPin(L[i].PORT, L[i].PIN))
-		{
-			ButtonMatrix &= ~(1<<(X*4+i));
+			}
+			else
+			{
+				ButtonMatrix |= 1 << (X * 4 + i);
+
+			}
 
 		}
-		else
+		//SET RX
+		HAL_GPIO_WritePin(R[X].PORT, R[X].PIN, 1);
+		//RESET RX+1%4
+		HAL_GPIO_WritePin(R[(X + 1) % 4].PORT, R[(X + 1) % 4].PIN, 0);
+		X++;
+		X %= 4; // it is mod. eg. 4 %= 4 = 1 เศษ 0 ----> x = 0
+	if (LastButton == 0 && ButtonMatrix > 0)
+		  					{
+		  						 if (ButtonMatrix == 4) // 1
+		  						{
+
+		  						}
+
+		  						else if (ButtonMatrix == 64) // 2
+		  						{
+
+		  						}
+
+		  						else if (ButtonMatrix == 1024) // 3
+		  						{
+
+		  						}
+
+		  						else if (ButtonMatrix == 2) // 4
+		  						{
+
+		  						}
+
+		  						else if (ButtonMatrix == 32) // 5
+		  						{
+
+		  						}
+
+		  						else if (ButtonMatrix == 512) // 6
+		  						{
+
+		  						}
+
+		  						else if (ButtonMatrix == 1) // 7
+		  						{
+
+		  						}
+
+		  						else if (ButtonMatrix == 16 ) // 8
+		  						{
+
+		  						}
+		  						else if (ButtonMatrix == 256) // 9
+		  						{
+
+		  						}
+
+		  						//LastButton = Button ;
+
+		  						if (ButtonMatrix == 4096) // clear
+		  							{
+
+		  							}
+
+		  						if (ButtonMatrix == 32768)
+		  							{
+		  							}
+		  					}
+
+		  					LastButton = ButtonMatrix;
+
+		  	  }
+
+
+void callin_fnc(){
+	void func(){
+	avoltb = 0 ;
+	bvoltb = 0 ;//set start
+	tempb = 0 ; //set start
+
+	for (int i = 0; i < 100; i++)
 		{
-			ButtonMatrix |= 1<<(X*4+i);
+			avoltb += adcdmabuffer[i].IN0 ;
+			bvoltb += adcdmabuffer[i].IN0 ;
+			tempb += adcdmabuffer[i].Temp ;
 
+			if (i == 99)
+			{
+				avoltb = avoltb / 100 ; // find Avg Vin
+				bvoltb = bvoltb / 100 ; // find Avg Vin
+				tempb= tempb / 100 ; // find Avg Temp
+			}
 		}
-
+			avolt = (( avoltb * 3.3 * 1000) / 4096 )* 2;  //find Vin * 2 because voltage div
+			bvolt = (( bvoltb * 3.3 * 1000) / 4096 )* 2;
+			temp = (((((tempb * 3.3)/ 4096)*1000)- 760)/ 2.5) + 25 + 273.15;
 	}
-	//SET RX
-	HAL_GPIO_WritePin(R[X].PORT, R[X].PIN, 1);
-	//RESET RX+1%4
-	HAL_GPIO_WritePin(R[(X+1)%4].PORT, R[(X+1)%4].PIN, 0);
-	X++;
-	X%=4;
 }
 /* USER CODE END 4 */
 
