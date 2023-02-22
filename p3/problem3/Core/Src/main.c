@@ -426,7 +426,7 @@ for (int i = 0; i < 100; i++)
 	}
 		volt = (( voltb * 3.3 * 1000) / 256 )* 2;
 		volt2 = (( voltb2 * 3.3 * 1000) / 256)* 2;//find Vin * 2 because voltage div
-		temp = (((( tempb* 3.3 * 1000) / 256 ) - (0.76 * 1000)) / 2.5 ) + 25;
+		temp =  (((((tempb * 3.3)/ 256)*1000)- 760)/ 2.5) + 25;
 }
 void ReadMatrixButton_1Row()
 {
