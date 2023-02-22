@@ -53,6 +53,32 @@ typedef struct {
 }ADCDMABuffer;
 
 ADCDMABuffer adcdmabuffer[10];
+//declare port r,l
+typedef struct _PortPin
+{
+	GPIO_TypeDef* PORT;
+	uint16_t PIN;
+} PortPin;
+PortPin R[4] =
+{
+		{GPIOA,GPIO_PIN_10},
+		{GPIOB,GPIO_PIN_3},
+		{GPIOB,GPIO_PIN_5},
+		{GPIOB,GPIO_PIN_4}
+};
+
+PortPin L[4] =
+{
+		{GPIOA,GPIO_PIN_9},
+		{GPIOC,GPIO_PIN_7},
+		{GPIOB,GPIO_PIN_6},
+		{GPIOA,GPIO_PIN_7}
+};
+
+//For Button Contenter
+uint16_t ButtonMatrix=0;
+uint16_t sum = 0;
+uint32_t LastButton = 0;
 
 uint16_t voltb = 0; // bit
 uint16_t volt = 0; // mV
@@ -93,7 +119,7 @@ int main(void)
   /* Reset of all peripherals, Initializes the Flash interface and the Systick. */
   HAL_Init();
 
-  /* USER CODE  BEGIN Init */
+  /* USER CODE BEGIN Init */
 
   /* USER CODE END Init */
 
@@ -103,6 +129,7 @@ int main(void)
   /* USER CODE BEGIN SysInit */
 
   /* USER CODE END SysInit */
+
   /* Initialize all configured peripherals */
   MX_GPIO_Init();
   MX_DMA_Init();
@@ -122,12 +149,17 @@ int main(void)
     /* USER CODE BEGIN 3 */
 	  //Call function every 1000 ms = 1 s =  1 Hz
 		static uint32_t timestamp = 0;
+		static uint32_t sub = 0;
 		if (HAL_GetTick() >= timestamp)
 		{
 			timestamp = HAL_GetTick() + 1000;
 			func();
-
-
+		}
+		else if (HAL_GetTick() >= sub)
+		{
+			sub = HAL_GetTick() + 10;
+			ReadMatrixButton_1Row();
+			btm();
 		}
   }
   /* USER CODE END 3 */
@@ -317,6 +349,12 @@ static void MX_GPIO_Init(void)
   /*Configure GPIO pin Output Level */
   HAL_GPIO_WritePin(LD2_GPIO_Port, LD2_Pin, GPIO_PIN_RESET);
 
+  /*Configure GPIO pin Output Level */
+  HAL_GPIO_WritePin(R1_GPIO_Port, R1_Pin, GPIO_PIN_SET);
+
+  /*Configure GPIO pin Output Level */
+  HAL_GPIO_WritePin(GPIOB, R2_Pin|R4_Pin|R3_Pin, GPIO_PIN_SET);
+
   /*Configure GPIO pin : B1_Pin */
   GPIO_InitStruct.Pin = B1_Pin;
   GPIO_InitStruct.Mode = GPIO_MODE_IT_FALLING;
@@ -329,6 +367,38 @@ static void MX_GPIO_Init(void)
   GPIO_InitStruct.Pull = GPIO_NOPULL;
   GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
   HAL_GPIO_Init(LD2_GPIO_Port, &GPIO_InitStruct);
+
+  /*Configure GPIO pins : L4_Pin L1_Pin */
+  GPIO_InitStruct.Pin = L4_Pin|L1_Pin;
+  GPIO_InitStruct.Mode = GPIO_MODE_INPUT;
+  GPIO_InitStruct.Pull = GPIO_PULLUP;
+  HAL_GPIO_Init(GPIOA, &GPIO_InitStruct);
+
+  /*Configure GPIO pin : L2_Pin */
+  GPIO_InitStruct.Pin = L2_Pin;
+  GPIO_InitStruct.Mode = GPIO_MODE_INPUT;
+  GPIO_InitStruct.Pull = GPIO_PULLUP;
+  HAL_GPIO_Init(L2_GPIO_Port, &GPIO_InitStruct);
+
+  /*Configure GPIO pin : R1_Pin */
+  GPIO_InitStruct.Pin = R1_Pin;
+  GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_OD;
+  GPIO_InitStruct.Pull = GPIO_NOPULL;
+  GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
+  HAL_GPIO_Init(R1_GPIO_Port, &GPIO_InitStruct);
+
+  /*Configure GPIO pins : R2_Pin R4_Pin R3_Pin */
+  GPIO_InitStruct.Pin = R2_Pin|R4_Pin|R3_Pin;
+  GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_OD;
+  GPIO_InitStruct.Pull = GPIO_NOPULL;
+  GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
+  HAL_GPIO_Init(GPIOB, &GPIO_InitStruct);
+
+  /*Configure GPIO pin : L3_Pin */
+  GPIO_InitStruct.Pin = L3_Pin;
+  GPIO_InitStruct.Mode = GPIO_MODE_INPUT;
+  GPIO_InitStruct.Pull = GPIO_PULLUP;
+  HAL_GPIO_Init(L3_GPIO_Port, &GPIO_InitStruct);
 
   /* EXTI interrupt init*/
   HAL_NVIC_SetPriority(EXTI15_10_IRQn, 0, 0);
@@ -356,8 +426,102 @@ for (int i = 0; i < 100; i++)
 	}
 		volt = (( voltb * 3.3 * 1000) / 256 )* 2;
 		volt2 = (( voltb2 * 3.3 * 1000) / 256)* 2;//find Vin * 2 because voltage div
-		temp = (((tempb * 3.3)/ 246)*1000);
+		temp = (((( tempb* 3.3 * 1000) / 256 ) - (0.76 * 1000)) / 2.5 ) + 25;
 }
+void ReadMatrixButton_1Row()
+{
+	//
+	static uint8_t X = 0;
+
+	//READ L1-L4
+	register int i;
+	for(i=0;i<4;i++)
+	{
+		if(HAL_GPIO_ReadPin(L[i].PORT, L[i].PIN))
+		{
+			ButtonMatrix &= ~(1<<(X*4+i));
+
+		}
+		else
+		{
+			ButtonMatrix |= 1<<(X*4+i);
+
+		}
+
+	}
+	//SET RX
+	HAL_GPIO_WritePin(R[X].PORT, R[X].PIN, 1);
+	//RESET RX+1%4
+	HAL_GPIO_WritePin(R[(X+1)%4].PORT, R[(X+1)%4].PIN, 0);
+	X++;
+	X%=4;
+}
+void btm(){
+	if (LastButton == 0 && ButtonMatrix > 0)
+		  					{
+		  						if (ButtonMatrix == 4) // 1
+		  						{
+		  							sum = voltb * voltb2;
+
+		  						}
+
+		  						else if (ButtonMatrix == 64) // 2
+		  						{
+		  							sum = voltb * tempb;
+
+		  						}
+
+		  						else if (ButtonMatrix == 1024) // 3
+		  						{
+		  							sum = voltb2 * tempb;
+
+		  						}
+
+		  						else if (ButtonMatrix == 2) // 4
+		  						{
+		  							 sum = voltb - voltb2;
+
+		  						}
+
+		  						else if (ButtonMatrix == 32) // 5
+		  						{
+		  							sum = voltb - tempb;
+
+		  						}
+
+		  						else if (ButtonMatrix == 512) // 6
+		  						{
+
+		  							sum = voltb2 - tempb;
+
+
+		  						}
+
+		  						else if (ButtonMatrix == 1) // 7
+		  						{
+		  							sum = voltb + voltb2;
+		  						}
+
+		  						else if (ButtonMatrix == 16 ) // 8
+		  						{
+		  							sum = voltb + tempb;
+
+		  						}
+
+
+		  						else if (ButtonMatrix == 256) // 9
+		  						{
+		  							sum = voltb2 + tempb;
+
+		  						}
+
+
+		  					}
+
+		  					LastButton = ButtonMatrix;
+
+		  	  }
+
 /* USER CODE END 4 */
 
 /**
